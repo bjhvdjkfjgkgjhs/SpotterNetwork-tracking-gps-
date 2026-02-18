@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Spotter Network Tracker + Reports (GPS Accurate)</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  :root{
+    --bg0:#050b12;
+    --panel:#0b1b2ee6;
+    --panel2:#0b1b2ef2;
+    --stroke:#1b3758;
+    --text:#eaf3ff;
+    --muted:#a9c0de;
+    --ok:#7CFF9A;
+    --bad:#ff7c7c;
+    --accent:#00ffff;
+    --danger:#ff3b3b;
+    --btn:#2b78ff;
+    --btn2:#20324a;
+    --shadow: 0 14px 40px rgba(0,0,0,.55);
+    --radius: 16px;
+  }
+
+  html, body, #map{
+    height:100%;
+    margin:0;
+    background: radial-gradient(1200px 700px at 20% 10%, #0f2340 0%, var(--bg0) 55%),
+                linear-gradient(160deg, #070f1a 0%, var(--bg0) 60%);
+    overscroll-behavior:none;
+  }
+
+  .leaflet-control-zoom a{
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--stroke);
+    box-shadow: 0 10px 24px rgba(0,0,0,.35);
+  }
+  .leaflet-control-attribution{
+    background: rgba(0,0,0,.25);
+    color: rgba(255,255,255,.7);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.08);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .hud{
+    position:absolute;
+    top: 12px; left: 12px; right: 12px;
+    z-index: 1200;
+    display:flex;
+    gap: 10px;
+    align-items: stretch;
+    pointer-events:none;
+  }
+
+  .card{
+    pointer-events:auto;
+    background: var(--panel);
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: var(--text);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .statusCard{
+    flex: 1 1 auto;
+    padding: 12px 14px;
+    display:flex;
+    justify-content:space-between;
+    gap: 14px;
+    align-items:flex-start;
+    min-width: 260px;
+  }
+
+  .title{
+    font: 700 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    letter-spacing:.2px;
+    display:flex;
+    align-items:center;
+    gap: 10px;
+  }
+  .badge{
+    font: 700 11px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    padding: 6px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    color: var(--muted);
+  }
+  .badge.ok{ color: var(--ok); border-color: rgba(124,255,154,.35); background: rgba(124,255,154,.08); }
+  .badge.bad{ color: var(--bad); border-color: rgba(255,124,124,.35); background: rgba(255,124,124,.08); }
+
+  .kv{
+    margin-top: 8px;
+    color: var(--muted);
+    font: 12px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  }
+  .kv b{ color: var(--text); font-weight: 600; }
+  .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+
+  .actions{
+    display:flex;
+    flex-direction:column;
+    gap: 8px;
+    min-width: 140px;
+  }
+  .btn{
+    appearance:none;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, rgba(43,120,255,.95), rgba(43,120,255,.75));
+    color: white;
+    font: 700 13px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    cursor:pointer;
+  }
+  .btn.secondary{ background: rgba(32,50,74,.65); }
+  .btn.danger{
+    background: linear-gradient(180deg, rgba(255,59,59,.95), rgba(255,59,59,.72));
+  }
+  .btn:active{ transform: translateY(1px); }
+
+  .toast{
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.10);
+    background: rgba(0,0,0,.22);
+    color: rgba(234,243,255,.84);
+    font: 12px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    display:none;
+  }
+
+  /* Modals */
+  .backdrop{
+    position:absolute; inset:0; z-index:2000;
+    background: radial-gradient(900px 600px at 20% 10%, rgba(0,255,255,.08) 0%, rgba(0,0,0,.72) 60%),
+                rgba(0,0,0,.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding: 22px 16px;
+  }
+  .modal{
+    width: min(540px, 94vw);
+    border-radius: 18px;
+    padding: 16px;
+  }
+  .modalHeader{
+    display:flex; align-items:center; justify-content:space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .hint{
+    color: var(--muted);
+    font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    margin: 8px 0 12px;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .field{ margin-top: 10px; }
+  label{
+    display:block;
+    color: rgba(234,243,255,.86);
+    font: 600 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    margin-bottom: 6px;
+  }
+  input, textarea, select{
+    width:100%;
+    box-sizing:border-box;
+    padding: 12px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(9,20,34,.75);
+    color: var(--text);
+    outline:none;
+    font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  }
+  textarea{ min-height: 88px; resize: vertical; }
+  input:focus, textarea:focus, select:focus{
+    border-color: rgba(0,255,255,.45);
+    box-shadow: 0 0 0 3px rgba(0,255,255,.12);
+  }
+
+  .chips{
+    display:flex;
+    flex-wrap:wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .chip{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    color: rgba(234,243,255,.9);
+    font: 700 12px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    user-select:none;
+  }
+  .chip input{ width:auto; padding:0; margin:0; }
+
+  .modalButtons{
+    display:flex;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .modalButtons .btn{ flex:1; }
+
+  /* ===== Improved Compass Marker ===== */
+  .compassWrap{
+    width:54px;height:54px;
+    transform: translateZ(0);
+    filter: drop-shadow(0 10px 14px rgba(0,0,0,.58));
+  }
+  .ringOuter{
+    fill: rgba(0,255,255,.08);
+    stroke: rgba(0,255,255,.92);
+    stroke-width: 3.2;
+  }
+  .ringInner{
+    fill: rgba(9,20,34,.35);
+    stroke: rgba(255,255,255,.10);
+    stroke-width: 1.2;
+  }
+  .ticksMajor{ stroke: rgba(255,255,255,.55); stroke-width: 2; stroke-linecap: round; }
+  .ticksMinor{ stroke: rgba(255,255,255,.25); stroke-width: 1.2; stroke-linecap: round; }
+
+  .dirText{
+    font: 900 12px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    fill: rgba(255,255,255,.92);
+    paint-order: stroke;
+    stroke: rgba(0,0,0,.55);
+    stroke-width: 2;
+    letter-spacing: .4px;
+  }
+
+  .arrowFill{ fill: rgba(255,255,255,.95); }
+  .arrowStroke{ stroke: rgba(0,0,0,.65); stroke-width: 3; fill: none; }
+  .centerDot{ fill: rgba(0,255,255,.95); }
+
+  .speedArc{
+    fill: none;
+    stroke: rgba(124,255,154,.85);
+    stroke-width: 4;
+    stroke-linecap: round;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.35));
+  }
+</style>
+</head>
+
+<body>
+<div id="map"></div>
+
+<div class="hud">
+  <div class="card statusCard">
+    <div style="flex:1">
+      <div class="title">
+        Spotter Network Tracker
+        <span id="badge" class="badge">DISCONNECTED</span>
+      </div>
+
+      <div id="kv" class="kv">
+        <b>GPS:</b> <span class="mono">—</span><br/>
+        <b>Speed:</b> — • <b>Heading:</b> —<br/>
+        <b>Accuracy:</b> —
+      </div>
+
+      <div id="toast" class="toast"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" onclick="openLogin()">Connect</button>
+      <button class="btn secondary" onclick="startGPSOnly()">Start GPS</button>
+      <button class="btn danger" onclick="openReport()">Report</button>
+    </div>
+  </div>
+</div>
+
+<!-- Login Modal -->
+<div id="loginBackdrop" class="backdrop">
+  <div class="card modal">
+    <div class="modalHeader">
+      <div class="title">Connect to Spotter Network</div>
+      <span class="badge">/login</span>
+    </div>
+
+    <div class="hint">
+      Credentials are used only to request your session <b>APPLICATION-ID</b>. Nothing is stored.
+    </div>
+
+    <div class="grid">
+      <div class="field">
+        <label for="user">Username</label>
+        <input id="user" autocomplete="username" placeholder="Spotter Network username">
+      </div>
+      <div class="field">
+        <label for="pass">Password</label>
+        <input id="pass" type="password" autocomplete="current-password" placeholder="Password">
+      </div>
+    </div>
+
+    <div id="loginStatus" class="hint" style="margin-top:10px"></div>
+
+    <div class="modalButtons">
+      <button class="btn" onclick="login()">Connect</button>
+      <button class="btn secondary" onclick="closeLogin()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Report Modal -->
+<div id="reportBackdrop" class="backdrop">
+  <div class="card modal">
+    <div class="modalHeader">
+      <div class="title">Submit a Spotter Report</div>
+      <span class="badge">GPS location</span>
+    </div>
+
+    <div class="hint">
+      Default location = your most recent <b>GPS fix</b> (for accuracy). You can override lat/lon if needed.
+    </div>
+
+    <div class="grid">
+      <div class="field">
+        <label>Report Type</label>
+        <select id="reportType" onchange="renderReportForm()">
+          <option value="severe">Severe (/report/severe)</option>
+          <option value="winter">Winter (/report/winter)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Time (UTC)</label>
+        <input id="reportStamp" placeholder="YYYY-MM-DD HH:MM:SS">
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="field">
+        <label>Latitude</label>
+        <input id="reportLat" placeholder="auto from GPS">
+      </div>
+      <div class="field">
+        <label>Longitude</label>
+        <input id="reportLon" placeholder="auto from GPS">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Narrative</label>
+      <textarea id="reportNarr" placeholder="Short description (what/where/how confident)"></textarea>
+    </div>
+
+    <div id="reportForm"></div>
+
+    <div class="grid">
+      <div class="field">
+        <label>Submit to NWSChat</label>
+        <select id="reportNwsChat">
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Submit to Twitter (@SpotterNetwork)</label>
+        <select id="reportTwitter">
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="reportStatus" class="hint" style="margin-top:10px"></div>
+
+    <div class="modalButtons">
+      <button class="btn danger" onclick="submitReport()">Submit Report</button>
+      <button class="btn secondary" onclick="closeReport()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ===== Map =====
+  const map = L.map("map", { zoomControl:true }).setView([39,-84],6);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+  // ===== State =====
+  let APP_ID = null;
+  let lastFix = null;
+  let watchId = null;
+  let sendTimer = null;
+
+  let gpsMarker = null;       // compass marker
+  let gpsAccuracy = null;     // accuracy circle
+  let spotterDot = null;      // red dot marker
+  let lastSpotterLatLng = null; // last successful upload (visual only; reports use GPS)
+
+  // ===== UI =====
+  const badgeEl = document.getElementById("badge");
+  const kvEl = document.getElementById("kv");
+  const toastEl = document.getElementById("toast");
+
+  const loginBackdrop = document.getElementById("loginBackdrop");
+  const loginStatusEl = document.getElementById("loginStatus");
+
+  const reportBackdrop = document.getElementById("reportBackdrop");
+  const reportStatusEl = document.getElementById("reportStatus");
+  const reportFormEl = document.getElementById("reportForm");
+
+  function setBadge(text, cls){
+    badgeEl.textContent = text;
+    badgeEl.classList.remove("ok","bad");
+    if(cls) badgeEl.classList.add(cls);
+  }
+  function setToast(msg, kind){
+    if(!msg){ toastEl.style.display="none"; toastEl.textContent=""; toastEl.style.borderColor="rgba(255,255,255,.10)"; return; }
+    toastEl.style.display="block";
+    toastEl.textContent = msg;
+    toastEl.style.borderColor = kind==="bad" ? "rgba(255,124,124,.28)" : "rgba(124,255,154,.22)";
+  }
+
+  function openLogin(){ loginBackdrop.style.display="flex"; loginStatusEl.textContent=""; }
+  function closeLogin(){ loginBackdrop.style.display="none"; loginStatusEl.textContent=""; }
+
+  function openReport(){
+    reportBackdrop.style.display="flex";
+    reportStatusEl.textContent = "";
+    document.getElementById("reportStamp").value = nowUtcStamp();
+
+    // Default to GPS (accurate)
+    const gps = getBestGpsLatLng();
+    if(gps){
+      document.getElementById("reportLat").value = gps.lat.toFixed(6);
+      document.getElementById("reportLon").value = gps.lng.toFixed(6);
+    }else{
+      document.getElementById("reportLat").value = "";
+      document.getElementById("reportLon").value = "";
+      reportStatusEl.textContent = "No GPS fix yet. Tap Start GPS and wait for the compass dot.";
+    }
+
+    renderReportForm();
+  }
+  function closeReport(){ reportBackdrop.style.display="none"; reportStatusEl.textContent=""; }
+
+  function getBestGpsLatLng(){
+    if(!lastFix) return null;
+    return L.latLng(lastFix.coords.latitude, lastFix.coords.longitude);
+  }
+
+  // ===== Improved Compass Icon (with speed arc) =====
+  function compassIcon(headingDeg, speedMph){
+    const hdg = Number.isFinite(headingDeg) ? headingDeg : 0;
+    const mph = Number.isFinite(speedMph) ? speedMph : 0;
+
+    const maxSpeed = 80; // mph where arc tops out
+    const pct = Math.max(0, Math.min(1, mph / maxSpeed));
+    const sweep = 300 * pct;
+
+    const r = 42, cx=50, cy=50;
+    const startAng = (-150) * Math.PI/180;
+    const endAng = (-150 + sweep) * Math.PI/180;
+
+    const x1 = cx + r * Math.cos(startAng), y1 = cy + r * Math.sin(startAng);
+    const x2 = cx + r * Math.cos(endAng),   y2 = cy + r * Math.sin(endAng);
+    const largeArc = sweep > 180 ? 1 : 0;
+
+    const arcPath = (sweep <= 2) ? "" :
+      `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+
+    return L.divIcon({
+      className: "",
+      iconSize: [54,54],
+      iconAnchor: [27,27],
+      html: `
+        <div class="compassWrap">
+          <svg viewBox="0 0 100 100" width="54" height="54" aria-hidden="true">
+            ${arcPath ? `<path d="${arcPath}" class="speedArc"></path>` : ""}
+
+            <circle cx="50" cy="50" r="46" class="ringOuter"></circle>
+            <circle cx="50" cy="50" r="36" class="ringInner"></circle>
+
+            ${ticksSvg()}
+
+            <text x="50" y="15" text-anchor="middle" class="dirText">N</text>
+            <text x="86" y="54" text-anchor="middle" class="dirText">E</text>
+            <text x="50" y="92" text-anchor="middle" class="dirText">S</text>
+            <text x="14" y="54" text-anchor="middle" class="dirText">W</text>
+
+            <g transform="rotate(${hdg} 50 50)">
+              <path d="M50 10 L62 46 L50 40 L38 46 Z" class="arrowFill"></path>
+              <path d="M50 10 L62 46 L50 40 L38 46 Z" class="arrowStroke"></path>
+            </g>
+
+            <circle cx="50" cy="50" r="6.5" class="centerDot"></circle>
+          </svg>
+        </div>`
+    });
+  }
+
+  function ticksSvg(){
+    let s = "";
+    const cx=50, cy=50;
+    for(let deg=0; deg<360; deg+=30){
+      const isMajor = (deg % 90 === 0);
+      const r1 = isMajor ? 40 : 42;
+      const r2 = 46;
+      const a = (deg-90) * Math.PI/180;
+      const x1 = cx + r1*Math.cos(a), y1 = cy + r1*Math.sin(a);
+      const x2 = cx + r2*Math.cos(a), y2 = cy + r2*Math.sin(a);
+      s += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" class="${isMajor ? "ticksMajor" : "ticksMinor"}"></line>`;
+    }
+    return s;
+  }
+
+  // ===== GPS =====
+  function startGPSOnly(){
+    setToast("Starting GPS (test). If prompted, tap Allow.", "ok");
+    startGPS(false);
+  }
+
+  function geoErrorToText(err){
+    const code = err?.code;
+    const msg = err?.message || "";
+    if(code === 1) return `Permission denied. Enable Location for Safari. ${msg ? "(" + msg + ")" : ""}`;
+    if(code === 2) return `Position unavailable. ${msg ? "(" + msg + ")" : ""}`;
+    if(code === 3) return `Timed out getting GPS fix. ${msg ? "(" + msg + ")" : ""}`;
+    return `GPS error: ${msg || "unknown"}`;
+  }
+
+  function startGPS(enableSending){
+    if(!navigator.geolocation){
+      setToast("Geolocation not supported in this browser.", "bad");
+      return;
+    }
+
+    if(watchId) navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    if(sendTimer) clearInterval(sendTimer);
+    sendTimer = null;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>onFix(pos),
+      (err)=>setToast(geoErrorToText(err), "bad"),
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+    );
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos)=>onFix(pos),
+      (err)=>setToast(geoErrorToText(err), "bad"),
+      { enableHighAccuracy:true, timeout:20000, maximumAge:5000 }
+    );
+
+    if(enableSending){
+      sendTimer = setInterval(()=>{ if(lastFix) sendLocation(lastFix); }, 30000);
+    }
+  }
+
+  function onFix(pos){
+    lastFix = pos;
+
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    const acc = pos.coords.accuracy ?? 0;
+
+    const spdMps = pos.coords.speed ?? 0;
+    const mph = spdMps * 2.23694;
+
+    const hasHeading = Number.isFinite(pos.coords.heading);
+    const hdg = hasHeading ? pos.coords.heading : 0;
+
+    if(!gpsMarker){
+      gpsMarker = L.marker([lat,lon], { icon: compassIcon(hdg, mph), interactive:false }).addTo(map);
+      map.setView([lat,lon], 13);
+    } else {
+      gpsMarker.setLatLng([lat,lon]);
+      gpsMarker.setIcon(compassIcon(hdg, mph));
+    }
+
+    if(!gpsAccuracy){
+      gpsAccuracy = L.circle([lat,lon], {
+        radius: acc,
+        color: "#00ffff",
+        weight: 1,
+        fillOpacity: 0.06
+      }).addTo(map);
+    } else {
+      gpsAccuracy.setLatLng([lat,lon]);
+      gpsAccuracy.setRadius(acc);
+    }
+
+    kvEl.innerHTML =
+      `<b>GPS:</b> <span class="mono">${lat.toFixed(5)}, ${lon.toFixed(5)}</span><br/>`+
+      `<b>Speed:</b> ${Math.round(mph)} mph • <b>Heading:</b> ${hasHeading ? Math.round(pos.coords.heading) + "°" : "—"}<br/>`+
+      `<b>Accuracy:</b> ${Math.round(acc)} m`;
+  }
+
+  // ===== Login =====
+  async function login(){
+    const u = document.getElementById("user").value.trim();
+    const p = document.getElementById("pass").value;
+
+    if(!u || !p){
+      loginStatusEl.textContent = "Enter username and password.";
+      return;
+    }
+
+    loginStatusEl.textContent = "Connecting…";
+    setToast("", "");
+
+    try{
+      const r = await fetch("https://www.spotternetwork.org/login",{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ username:u, password:p })
+      });
+
+      const j = await r.json();
+      if(!j || !j.success){
+        loginStatusEl.textContent = "Login failed. Check credentials.";
+        setBadge("DISCONNECTED", "bad");
+        return;
+      }
+
+      APP_ID = j.id;
+      closeLogin();
+      setBadge("CONNECTED", "ok");
+      setToast("Connected. Starting GPS + reporting every 30s.", "ok");
+      startGPS(true);
+
+    }catch(e){
+      loginStatusEl.textContent = "Login request failed.";
+      setBadge("DISCONNECTED", "bad");
+      setToast(String(e).slice(0,140), "bad");
+    }
+  }
+
+  // ===== SN Position Updates (red dot only) =====
+  async function sendLocation(pos){
+    if(!APP_ID) return;
+
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    const mph = (pos.coords.speed ?? 0) * 2.23694;
+    const dir = (pos.coords.heading ?? 0);
+    const ts = nowUtcStamp();
+
+    try{
+      const r = await fetch("https://www.spotternetwork.org/positions/update",{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({
+          id: APP_ID,
+          report_at: ts,
+          lat: lat,
+          lon: lon,
+          elev: 0,
+          mph: mph,
+          dir: dir,
+          active: 1,
+          gps: 1
+        })
+      });
+
+      if(r.ok){
+        lastSpotterLatLng = L.latLng(lat, lon);
+
+        if(!spotterDot){
+          spotterDot = L.circleMarker([lat,lon],{
+            radius: 6,
+            color: "#ff3b3b",
+            fillColor: "#ff3b3b",
+            fillOpacity: 1
+          }).addTo(map);
+        } else {
+          spotterDot.setLatLng([lat,lon]);
+        }
+
+        setBadge("REPORTING", "ok");
+        setToast("Last position report: " + ts + " (UTC)", "ok");
+      } else {
+        setBadge("SEND FAILED", "bad");
+        setToast("Position update failed (HTTP " + r.status + ").", "bad");
+      }
+    }catch(e){
+      setBadge("SEND ERROR", "bad");
+      setToast("Position update error: " + String(e).slice(0,120), "bad");
+    }
+  }
+
+  // ===== Reports =====
+  function renderReportForm(){
+    const type = document.getElementById("reportType").value;
+
+    if(type === "severe"){
+      reportFormEl.innerHTML = `
+        <div class="field">
+          <label>Severe flags</label>
+          <div class="chips">
+            ${chip("tornado","Tornado")}
+            ${chip("funnelcloud","Funnel")}
+            ${chip("wallcloud","Wall cloud")}
+            ${chip("rotation","Rotation")}
+            ${chip("hail","Hail")}
+            ${chip("wind","Wind")}
+            ${chip("flood","Flood")}
+            ${chip("flashflood","Flash flood")}
+            ${chip("damage","Damage")}
+            ${chip("injury","Injury")}
+            ${chip("other","Other")}
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Hail size (inches)</label>
+            <input id="hailsize" type="number" step="0.25" value="0">
+          </div>
+          <div class="field">
+            <label>Wind speed (mph)</label>
+            <input id="windspeed" type="number" step="1" value="0">
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Wind measure</label>
+            <select id="windmeasure">
+              <option value="0">Estimated</option>
+              <option value="1">Exact</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Time exact?</label>
+            <select id="stamp_exact">
+              <option value="0">No</option>
+              <option value="1">Yes</option>
+            </select>
+          </div>
+        </div>
+      `;
+    }else{
+      reportFormEl.innerHTML = `
+        <div class="field">
+          <label>Winter flags</label>
+          <div class="chips">
+            ${chip("snow","Snow")}
+            ${chip("sleet","Sleet")}
+            ${chip("FreezingRain","Freezing Rain")}
+            ${chip("blowing","Blowing")}
+            ${chip("drifting","Drifting")}
+            ${chip("icy","Roads icy")}
+            ${chip("slushy","Roads slushy")}
+            ${chip("snow_covered","Roads snow-covered")}
+            ${chip("power","Power lines icing")}
+            ${chip("trees","Trees icing")}
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Temperature (°F)</label>
+            <input id="temp" type="number" step="1" value="0">
+          </div>
+          <div class="field">
+            <label>Snow depth (inches)</label>
+            <input id="snow_depth" type="number" step="1" value="0">
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>New snowfall (inches)</label>
+            <input id="newsnowfall" type="number" step="0.1" value="0">
+          </div>
+          <div class="field">
+            <label>Total snowfall (inches)</label>
+            <input id="totalsnowfall" type="number" step="0.1" value="0">
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>New ice (inches)</label>
+            <input id="newice" type="number" step="0.01" value="0">
+          </div>
+          <div class="field">
+            <label>Total ice (inches)</label>
+            <input id="totalice" type="number" step="0.01" value="0">
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Drift depth (inches)</label>
+            <input id="depth" type="number" step="1" value="0">
+          </div>
+          <div class="field">
+            <label>Drift distance</label>
+            <input id="distance" type="number" step="1" value="0">
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  function chip(id, label){
+    return `
+      <label class="chip">
+        <input type="checkbox" id="${id}">
+        ${label}
+      </label>`;
+  }
+
+  async function submitReport(){
+    if(!APP_ID){
+      reportStatusEl.textContent = "You must Connect (login) first.";
+      setToast("Connect first to submit reports.", "bad");
+      return;
+    }
+
+    const type = document.getElementById("reportType").value;
+    const stamp = document.getElementById("reportStamp").value.trim() || nowUtcStamp();
+
+    // Use typed override if provided, otherwise FORCE GPS for accuracy
+    let latStr = document.getElementById("reportLat").value.trim();
+    let lonStr = document.getElementById("reportLon").value.trim();
+
+    let lat = latStr ? Number(latStr) : NaN;
+    let lon = lonStr ? Number(lonStr) : NaN;
+
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)){
+      const gps = getBestGpsLatLng();
+      if(!gps){
+        reportStatusEl.textContent = "No GPS fix available. Start GPS and try again.";
+        return;
+      }
+      lat = gps.lat;
+      lon = gps.lng;
+      document.getElementById("reportLat").value = lat.toFixed(6);
+      document.getElementById("reportLon").value = lon.toFixed(6);
+    }
+
+    const narrative = document.getElementById("reportNarr").value.trim() || "";
+    const nwschat = Number(document.getElementById("reportNwsChat").value);
+    const twitter = Number(document.getElementById("reportTwitter").value);
+
+    reportStatusEl.textContent = "Submitting…";
+
+    try{
+      if(type === "severe"){
+        const payload = {
+          id: APP_ID,
+          report_type: "S",
+          stamp: stamp,
+          tornado: cb("tornado"),
+          funnelcloud: cb("funnelcloud"),
+          wallcloud: cb("wallcloud"),
+          rotation: cb("rotation"),
+          hail: cb("hail"),
+          wind: cb("wind"),
+          flood: cb("flood"),
+          flashflood: cb("flashflood"),
+          other: cb("other"),
+          hailsize: num("hailsize"),
+          windspeed: num("windspeed"),
+          windmeasure: Number(document.getElementById("windmeasure").value),
+          stamp_exact: Number(document.getElementById("stamp_exact").value),
+          damage: cb("damage"),
+          injury: cb("injury"),
+          narrative: narrative,
+          lat: lat,
+          lon: lon,
+          gps: lastFix ? 1 : 0,
+          nwschat: nwschat,
+          twitter: twitter
+        };
+
+        const r = await fetch("https://www.spotternetwork.org/report/severe",{
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if(r.ok){
+          reportStatusEl.textContent = "Severe report submitted ✓";
+          setToast("Severe report submitted (" + stamp + " UTC).", "ok");
+        }else{
+          reportStatusEl.textContent = "Submit failed (HTTP " + r.status + ")";
+          setToast("Severe report failed (HTTP " + r.status + ").", "bad");
+        }
+
+      } else {
+        const payload = {
+          id: APP_ID,
+          report_type: "W",
+          stamp: stamp,
+          narrative: narrative,
+          lat: lat,
+          lon: lon,
+          gps: lastFix ? 1 : 0,
+          snow: cb("snow"),
+          sleet: cb("sleet"),
+          FreezingRain: cb("FreezingRain"),
+          temp: num("temp"),
+          ...splitInches("newsnowfall", "newsnowfall_w", "newsnowfall_f"),
+          newsnowfall_past_hr: 0,
+          ...splitInches("totalsnowfall", "totalsnowfall_w", "totalsnowfall_f"),
+          snow_depth: num("snow_depth"),
+          blowing: cb("blowing"),
+          drifting: cb("drifting"),
+          depth: num("depth"),
+          distance: num("distance"),
+          ...splitInches("newice", "newice_w", "newice_f"),
+          newice_past_hr: 0,
+          ...splitInches("totalice", "totalice_w", "totalice_f"),
+          icy: cb("icy"),
+          slushy: cb("slushy"),
+          snow_covered: cb("snow_covered"),
+          power: cb("power"),
+          trees: cb("trees"),
+          nwschat: nwschat,
+          twitter: twitter
+        };
+
+        const r = await fetch("https://www.spotternetwork.org/report/winter",{
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if(r.ok){
+          reportStatusEl.textContent = "Winter report submitted ✓";
+          setToast("Winter report submitted (" + stamp + " UTC).", "ok");
+        }else{
+          reportStatusEl.textContent = "Submit failed (HTTP " + r.status + ")";
+          setToast("Winter report failed (HTTP " + r.status + ").", "bad");
+        }
+      }
+
+    }catch(e){
+      reportStatusEl.textContent = "Submit error.";
+      setToast("Report submit error: " + String(e).slice(0,120), "bad");
+    }
+  }
+
+  function cb(id){
+    const el = document.getElementById(id);
+    return el && el.checked ? 1 : 0;
+  }
+  function num(id){
+    const el = document.getElementById(id);
+    const v = el ? Number(el.value) : 0;
+    return Number.isFinite(v) ? v : 0;
+  }
+
+  function splitInches(inputId, wholeField, fracField){
+    const v = num(inputId);
+    const whole = Math.max(0, Math.floor(v));
+    const frac = Math.max(0, Math.round((v - whole) * 10)); // one decimal digit
+    const out = {};
+    out[wholeField] = whole;
+    out[fracField] = frac;
+    return out;
+  }
+
+  function nowUtcStamp(){
+    const d = new Date();
+    const pad = (n)=>String(n).padStart(2,"0");
+    return d.getUTCFullYear()+"-"+pad(d.getUTCMonth()+1)+"-"+pad(d.getUTCDate())+" "+
+           pad(d.getUTCHours())+":"+pad(d.getUTCMinutes())+":"+pad(d.getUTCSeconds());
+  }
+
+  // Init
+  setBadge("DISCONNECTED");
+  renderReportForm();
+</script>
+</body>
+</html>
